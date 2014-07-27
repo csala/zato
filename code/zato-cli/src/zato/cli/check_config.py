@@ -75,12 +75,12 @@ class CheckConfig(ManageCommand):
 
     def on_server_check_kvdb(self, cm, conf):
 
-        kvdb_config = Bunch(dict(conf['kvdb'].items()))
-        kvdb = KVDB(None, kvdb_config, cm.decrypt)
-        kvdb.init()
-        
-        kvdb.conn.info()
-        kvdb.close()
+        for kvdb_config in [Bunch(dict(conf[key].items())) for key in conf if key.startswith('kvdb')]:
+            kvdb = KVDB(None, kvdb_config, cm.decrypt)
+            kvdb.init()
+            
+            kvdb.conn.info()
+            kvdb.close()
 
         if self.show_output:
             self.logger.info('Redis connection OK')

@@ -26,6 +26,9 @@ from redis.sentinel import Sentinel
 from zato.common import KVDB as _KVDB, NONCE_STORE
 from zato.common.util import has_redis_sentinels
 
+# collections
+from collections import defaultdict
+
 logger = getLogger(__name__)
 
 # Redis PyParsing grammar
@@ -65,10 +68,11 @@ class LuaContainer(object):
 
 # ################################################################################################################################
 
-class KVDB(object):
+class KVDB(defaultdict):
     """ A wrapper around the Zato's key-value database.
     """
     def __init__(self, conn=None, config=None, decrypt_func=None):
+        defaultdict.__init__(self, self._get_self)
         self.conn = conn
         self.config = config
         self.decrypt_func = decrypt_func
@@ -76,6 +80,9 @@ class KVDB(object):
         self.lua_container = LuaContainer()
         self.run_lua = self.lua_container.run_lua # So it's more natural to use it
         self.has_sentinel = False
+
+    def _get_self(self):
+        return self
 
     def _get_connection_class(self):
         """ Returns a concrete class to create Redis connections off basing on whether we use Redis sentinels or not.

@@ -55,6 +55,7 @@ from zato.common import ACCESS_LOG_DT_FORMAT, CHANNEL, KVDB, MISC, SERVER_JOIN_S
      ZATO_ODB_POOL_NAME
 from zato.common.broker_message import AMQP_CONNECTOR, code_to_name, HOT_DEPLOY,\
      JMS_WMQ_CONNECTOR, MESSAGE_TYPE, SERVICE, TOPICS, ZMQ_CONNECTOR
+from zato.common.kvdb import KVDB as KVDB_
 from zato.common.pubsub import PubSubAPI, RedisPubSub
 from zato.common.util import add_startup_jobs, get_kvdb_config_for_log, new_cid, register_diag_handlers
 from zato.server.base import BrokerMessageReceiver
@@ -278,6 +279,19 @@ class ParallelServer(DisposableObject, BrokerMessageReceiver):
 
                 yield [name, program]
 
+    def _init_kvdb(self, kvdb_config, kvdb=None):
+        """ Initialize a KVDB using the given config
+            If None is given, a new one is created
+        """
+        kvdb = kvdb or KVDB_()
+        kvdb.config = kvdb_config
+        kvdb.server = self
+        kvdb.decrypt_func = self.crypto_manager.decrypt
+        kvdb.init()
+        loggable_kvdb_config = get_kvdb_config_for_log(kvdb_config)
+        kvdb_logger.info('Worker config `%s`', loggable_kvdb_config)
+        return kvdb
+
     def _after_init_common(self, server, deployment_key):
         """ Initializes parts of the server that don't depend on whether the
         server's been allowed to join the cluster or not.
@@ -285,15 +299,14 @@ class ParallelServer(DisposableObject, BrokerMessageReceiver):
         self.worker_store = WorkerStore(self.config, self)
 
         # Key-value DB
-        kvdb_config = get_kvdb_config_for_log(self.fs_server_config.kvdb)
-        kvdb_logger.info('Worker config `%s`', kvdb_config)
+        kvdb_config = self.fs_server_config.kvdb
+        self._init_kvdb(kvdb_config, self.kvdb)
 
-        self.kvdb.config = self.fs_server_config.kvdb
-        self.kvdb.server = self
-        self.kvdb.decrypt_func = self.crypto_manager.decrypt
-        self.kvdb.init()
-
-        kvdb_logger.info('Worker config `%s`', kvdb_config)
+        # Additional Key-value DBs
+        for conf_key in self.fs_server_config:
+            if conf_key.startswith('kvdb_'):
+                kvdb_name = ''.join(conf_key.split('kvdb_')[1:])
+                self.kvdb[kvdb_name] = self._init_kvdb(self.fs_server_config[conf_key], self.kvdb)
 
         # Lua programs, both internal and user defined ones.
         for name, program in self.get_lua_programs():
